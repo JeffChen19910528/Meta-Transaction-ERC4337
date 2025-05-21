@@ -33,25 +33,19 @@ contract EntryPoint {
                 if (ops[j].meta_tx_order_id == i) {
                     found = true;
 
-                    emit DebugMetaOrder(ops[j].sender, ops[j].meta_tx_order_id, ops[j].meta_tx_id); // ✅ 加上 meta_tx_id
+                emit DebugMetaOrder(ops[j].sender, ops[j].meta_tx_order_id, ops[j].meta_tx_id);
 
-                    try this.validateAndExecute(
-                        ops[j].sender,
-                        ops[j].signature,
-                        ops[j].initCode,
-                        ops[j].callData,
-                        ops[j].callGasLimit
-                    ) {
-                        emit UserOpHandled(ops[j].sender, true, "");
-                    } catch Error(string memory reason) {
-                        emit UserOpHandled(ops[j].sender, false, reason);
-                        allSuccess = false;
-                    } catch {
-                        emit UserOpHandled(ops[j].sender, false, "Unknown error");
-                        allSuccess = false;
-                    }
+                validateAndExecute(
+                    ops[j].sender,
+                    ops[j].signature,
+                    ops[j].initCode,
+                    ops[j].callData,
+                    ops[j].callGasLimit
+                );
 
-                    break;
+                emit UserOpHandled(ops[j].sender, true, "");
+
+                break;
                 }
             }
 
@@ -74,7 +68,7 @@ contract EntryPoint {
         bytes calldata initCode,
         bytes calldata callData,
         uint256 gasLimit
-    ) external {
+    ) internal {
         require(true, "Signature bypassed"); // 測試用，略過簽章檢查
 
         if (isUnDeployed(sender)) {

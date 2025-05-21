@@ -1,3 +1,4 @@
+// bundler.js with revert reason decoding and improved logging
 const express = require('express');
 const ethers = require('ethers');
 const bodyParser = require('body-parser');
@@ -43,7 +44,6 @@ const entryPointABI = [
     "event MetaTransactionHandled(uint256 indexed meta_tx_id, bool success)"
 ];
 
-// === 初始化
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
@@ -57,7 +57,7 @@ app.use(bodyParser.json());
 let pendingUserOps = [];
 let isHandling = false;
 
-console.log("🛠️ Bundler 啟動中，使用 EntryPoint 地址:", ENTRY_POINT_ADDRESS);
+console.log("\uD83D\uDEE0\uFE0F Bundler 啟動中，使用 EntryPoint 地址:", ENTRY_POINT_ADDRESS);
 
 app.post('/', async (req, res) => {
     const { method, params } = req.body;
@@ -76,20 +76,33 @@ app.post('/', async (req, res) => {
     res.send({ result: "UserOperation queued" });
 });
 
-// === 每 3 秒處理一次批次
+function decodeRevertReason(error) {
+    try {
+        const hexData = error?.error?.data?.data ?? error?.error?.data;
+        if (hexData && hexData.startsWith("0x08c379a0")) {
+            const reasonHex = "0x" + hexData.slice(10);
+            const reasonBytes = Buffer.from(reasonHex.slice(2), "hex");
+            const reason = ethers.utils.defaultAbiCoder.decode(["string"], reasonBytes);
+            return reason[0];
+        }
+    } catch (e) {
+        return "Unable to decode revert reason";
+    }
+    return "Unknown error format";
+}
+
 setInterval(async () => {
     if (pendingUserOps.length === 0 || isHandling) return;
     isHandling = true;
 
     try {
-        // ✅ 修正排序：用 BigInt 比較 maxFeePerGas（不回傳 BigInt）
         pendingUserOps.sort((a, b) => {
             const aFee = BigInt(a.maxFeePerGas);
             const bFee = BigInt(b.maxFeePerGas);
             return aFee > bFee ? -1 : aFee < bFee ? 1 : 0;
         });
 
-        console.log("🧾 正在處理 UserOperations（按 maxFeePerGas 排序）:");
+        console.log("\uD83D\uDCDC 正在處理 UserOperations (按 maxFeePerGas 排序):");
         pendingUserOps.forEach((op, idx) => {
             try {
                 const decoded = walletInterface.decodeFunctionData("execute", op.callData);
@@ -148,7 +161,8 @@ setInterval(async () => {
         }
 
     } catch (err) {
-        console.error("❌ 批次送出失敗:", err.reason || err.message || err);
+        const reason = decodeRevertReason(err);
+        console.warn(`⛔ 所有操作回滾，錯誤原因: ${reason}`);
     } finally {
         console.log(`🧹 清空 pendingUserOps (${pendingUserOps.length} 筆)`);
         pendingUserOps = [];
